@@ -1,0 +1,18 @@
+# Data folders (tracked by DVC, not Git)
+data/raw/
+data/interim/
+data/processed/
+
+# Models
+models/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment files
+.env
+venv/
