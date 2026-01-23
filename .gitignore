@@ -1,5 +1,7 @@
 # Ignore all data by default
-data/**
+data/raw/
+data/interim/
+data/processed/
 
 # Allow DVC metadata
 !data/**/*.dvc
