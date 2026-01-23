@@ -1,7 +1,9 @@
-# Data folders (tracked by DVC, not Git)
-data/raw/
-data/interim/
-data/processed/
+# Ignore all data by default
+data/**
+
+# Allow DVC metadata
+!data/**/*.dvc
+!data/**/.gitkeep
 
 # Models
 models/
