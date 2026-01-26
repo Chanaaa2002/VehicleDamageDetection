@@ -1,0 +1,6 @@
+outs:
+- md5: 2ee9ce0b4a7de2635f3f08d1be769ed5.dir
+  size: 19228757
+  nfiles: 8000
+  hash: md5
+  path: cardd_sod
