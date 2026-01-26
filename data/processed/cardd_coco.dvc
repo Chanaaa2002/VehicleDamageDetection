@@ -1,0 +1,6 @@
+outs:
+- md5: 436c078190c1eba01f43ea1b2f867c53.dir
+  size: 3055334300
+  nfiles: 4003
+  hash: md5
+  path: cardd_coco
