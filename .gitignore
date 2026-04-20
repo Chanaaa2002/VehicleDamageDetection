@@ -20,3 +20,5 @@ __pycache__/
 # Environment files
 .env
 venv/
+
+notebooks/03_training/runs/
