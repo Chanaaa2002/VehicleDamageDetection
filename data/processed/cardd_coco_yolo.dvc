@@ -1,0 +1,6 @@
+outs:
+- md5: 54f190466bc6b2f0b359e4f53425052e.dir
+  size: 2743710272
+  nfiles: 7254
+  hash: md5
+  path: cardd_coco_yolo

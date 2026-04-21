@@ -1,0 +1,6 @@
+outs:
+- md5: d25fd08bdef1987ad7079ac3f91566d7.dir
+  size: 169844891
+  nfiles: 7202
+  hash: md5
+  path: archive5_yolo

@@ -1,0 +1,6 @@
+outs:
+- md5: 4c77084a1b2441cdca3d10f5086ef56e.dir
+  size: 15738880
+  nfiles: 8003
+  hash: md5
+  path: cardd_sod_yolo
