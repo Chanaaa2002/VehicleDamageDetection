@@ -1,0 +1,6 @@
+outs:
+- md5: b93de4a983cab0235ce39cb6c2f69d98.dir
+  size: 117751986
+  nfiles: 9931
+  hash: md5
+  path: archive2_aug

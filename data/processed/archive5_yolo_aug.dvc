@@ -1,0 +1,6 @@
+outs:
+- md5: 38d6733933f6098e64f138a653bfc6ab.dir
+  size: 226413968
+  nfiles: 12914
+  hash: md5
+  path: archive5_yolo_aug
