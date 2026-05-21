@@ -22,3 +22,4 @@ __pycache__/
 venv/
 
 notebooks/03_training/runs/
+reports/
