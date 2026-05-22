@@ -23,3 +23,11 @@ venv/
 
 notebooks/03_training/runs/
 reports/
+
+# Keep model weights out of Git
+models/**/*.pt
+
+# Allow DVC pointer files for model folders
+!models/
+!models/*.dvc
+!models/.gitignore
