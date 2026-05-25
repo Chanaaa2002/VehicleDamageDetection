@@ -1,0 +1,6 @@
+outs:
+- md5: 2871ae8c910c41b8697d72e545630ec1.dir
+  size: 151745906
+  nfiles: 7669
+  hash: md5
+  path: carparts_seg_yolo
