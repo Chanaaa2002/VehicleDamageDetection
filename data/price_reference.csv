@@ -1,0 +1,11 @@
+brand,model,year,part,repair_min,repair_max,recondition_min,recondition_max,new_min,new_max
+Toyota,Aqua,2018,front_bumper,25000,55000,40000,85000,90000,150000
+Toyota,Aqua,2018,back_bumper,22000,50000,35000,80000,85000,140000
+Toyota,Aqua,2018,front_light,0,0,30000,70000,80000,160000
+Toyota,Aqua,2018,back_light,0,0,25000,60000,70000,140000
+Toyota,Aqua,2018,front_door,35000,75000,70000,140000,150000,280000
+Toyota,Aqua,2018,hood,35000,80000,80000,160000,180000,320000
+Toyota,Aqua,2018,left_mirror,0,0,18000,45000,50000,95000
+Toyota,Aqua,2018,right_mirror,0,0,18000,45000,50000,95000
+Toyota,Aqua,2018,front_glass,0,0,35000,80000,85000,180000
+Toyota,Aqua,2018,wheel,5000,20000,15000,40000,45000,90000

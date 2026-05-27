@@ -1,0 +1,6 @@
+outs:
+- md5: dece8805cdd37eb358cafbb9cb1d6bae.dir
+  size: 283496449
+  nfiles: 1241
+  hash: md5
+  path: damaged_parts_yolo
