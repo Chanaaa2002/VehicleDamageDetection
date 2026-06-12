@@ -1,11 +1,84 @@
-brand,model,year,part,repair_min,repair_max,recondition_min,recondition_max,new_min,new_max
-Toyota,Aqua,2018,front_bumper,25000,55000,40000,85000,90000,150000
-Toyota,Aqua,2018,back_bumper,22000,50000,35000,80000,85000,140000
-Toyota,Aqua,2018,front_light,0,0,30000,70000,80000,160000
-Toyota,Aqua,2018,back_light,0,0,25000,60000,70000,140000
-Toyota,Aqua,2018,front_door,35000,75000,70000,140000,150000,280000
-Toyota,Aqua,2018,hood,35000,80000,80000,160000,180000,320000
-Toyota,Aqua,2018,left_mirror,0,0,18000,45000,50000,95000
-Toyota,Aqua,2018,right_mirror,0,0,18000,45000,50000,95000
-Toyota,Aqua,2018,front_glass,0,0,35000,80000,85000,180000
-Toyota,Aqua,2018,wheel,5000,20000,15000,40000,45000,90000
+brand,model,year_from,year_to,part,condition,part_min_lkr,part_max_lkr,labour_min_lkr,labour_max_lkr,source_name,source_type,notes
+Toyota,Aqua,2012,2021,front bumper,used/reconditioned,35000,75000,15000,30000,ikman/eParts/public listings,market_reference,Part range based on Sri Lankan public listings; labour is fitting and paint estimate
+Toyota,Aqua,2012,2021,rear bumper,used/reconditioned,28000,55000,15000,30000,ikman/eParts/public listings,market_reference,Rear bumper replacement or repair range
+Toyota,Aqua,2012,2021,headlight/front lamp,used/reconditioned,50000,105000,8000,15000,ikman public listings,market_reference,Headlight prices vary by trim and LED/xenon type
+Toyota,Aqua,2012,2021,rear lamp/light,used/reconditioned,32000,85000,8000,15000,ikman public listings,market_reference,Tail lamp prices vary by side and condition
+Toyota,Aqua,2012,2021,windshield,new/replacement,65500,80000,10000,20000,ikman/eParts/windscreen suppliers,market_reference,Windscreen price plus fitting estimate
+Toyota,Aqua,2012,2021,hood/front shell,used/reconditioned,35000,65000,20000,40000,public market reference,market_reference,Bonnet or front shell part with paint labour
+Toyota,Aqua,2012,2021,tailgate,used/reconditioned,70000,150000,25000,50000,public market reference,market_reference,Tailgate or dicky door cost varies by glass and garnish
+Toyota,Aqua,2012,2021,fender/body panel,used/reconditioned,15000,35000,15000,35000,public market reference,market_reference,Fender or small body panel with repair/paint
+Toyota,Aqua,2012,2021,front body panel,repair/paint,25000,70000,25000,60000,garage labour estimate,labour_reference,Panel beating and paint estimate
+Toyota,Aqua,2012,2021,rear body panel,repair/paint,25000,70000,25000,60000,garage labour estimate,labour_reference,Rear panel repair and paint estimate
+Toyota,Aqua,2012,2021,wheel/tire,used/new,15000,35000,3000,8000,ikman tyre/public listings,market_reference,Tyre or wheel check/replacement range
+
+Honda,Vezel,2014,2021,front bumper,used/reconditioned,16000,68000,20000,40000,ikman public listings,market_reference,Vezel buffer/lip and bumper-related listings; full bumper may vary
+Honda,Vezel,2014,2021,rear bumper,used/reconditioned,40000,68000,20000,40000,ikman/public listings,market_reference,Rear bumper and related bumper light area
+Honda,Vezel,2014,2021,headlight/front lamp,used/reconditioned,75000,100000,8000,15000,ikman public listings,market_reference,Vezel head light listings show high variation
+Honda,Vezel,2014,2021,rear lamp/light,used/reconditioned,11000,23000,8000,15000,ikman/Riyasewana public listings,market_reference,Tail lamp/dicky light range
+Honda,Vezel,2014,2021,windshield,new/replacement,80000,120000,12000,25000,windscreen suppliers/public market,market_reference,Windscreen estimate for SUV/hybrid class
+Honda,Vezel,2014,2021,hood/front shell,used/reconditioned,32000,35000,25000,45000,Riyasewana/public listings,market_reference,Bonnet/hood range plus paint labour
+Honda,Vezel,2014,2021,tailgate,used/reconditioned,45000,225000,30000,60000,ikman/Riyasewana public listings,market_reference,Dickey/tailgate varies heavily by glass and trim
+Honda,Vezel,2014,2021,fender/body panel,used/reconditioned,20000,45000,18000,40000,public market reference,market_reference,Fender/body panel estimate
+Honda,Vezel,2014,2021,front body panel,repair/paint,35000,90000,30000,70000,garage labour estimate,labour_reference,Front panel repair and paint estimate
+Honda,Vezel,2014,2021,rear body panel,repair/paint,35000,90000,30000,70000,garage labour estimate,labour_reference,Rear panel repair and paint estimate
+Honda,Vezel,2014,2021,wheel/tire,used/new,30000,55000,3000,10000,ikman tyre/public listings,market_reference,SUV tyre/wheel range
+
+Toyota,Vitz,2005,2019,front bumper,used/reconditioned,25000,45000,15000,30000,ikman public listings,market_reference,Vitz front bumper/buffer listings
+Toyota,Vitz,2005,2019,rear bumper,used/reconditioned,17000,30000,15000,30000,ikman public listings,market_reference,Vitz rear bumper listings
+Toyota,Vitz,2005,2019,headlight/front lamp,used/reconditioned,24000,100000,8000,15000,ikman public listings,market_reference,Headlight range varies by KSP90/KSP130/xenon
+Toyota,Vitz,2005,2019,rear lamp/light,used/reconditioned,18000,22000,8000,15000,ikman public listings,market_reference,Tail light range
+Toyota,Vitz,2005,2019,windshield,new/replacement,65000,75000,10000,20000,ikman/windscreen suppliers,market_reference,KSP130 windscreen listing and fitting estimate
+Toyota,Vitz,2005,2019,hood/front shell,used/reconditioned,16000,28000,18000,35000,ikman public listings,market_reference,Vitz bonnet listings
+Toyota,Vitz,2005,2019,tailgate,used/reconditioned,45000,85000,25000,45000,public market reference,market_reference,Dickey/tailgate estimate
+Toyota,Vitz,2005,2019,fender/body panel,used/reconditioned,9000,12500,15000,30000,ikman public listings,market_reference,Vitz fender listings
+Toyota,Vitz,2005,2019,front body panel,repair/paint,20000,60000,20000,50000,garage labour estimate,labour_reference,Front panel repair/paint
+Toyota,Vitz,2005,2019,rear body panel,repair/paint,20000,60000,20000,50000,garage labour estimate,labour_reference,Rear panel repair/paint
+Toyota,Vitz,2005,2019,wheel/tire,used/new,12000,30000,3000,8000,ikman tyre/public listings,market_reference,Small car tyre/wheel range
+
+Suzuki,Alto,2004,2022,front bumper,used/reconditioned,6500,25000,12000,25000,ikman public listings,market_reference,Alto buffer listing used as lower range
+Suzuki,Alto,2004,2022,rear bumper,used/reconditioned,6500,25000,12000,25000,ikman public listings,market_reference,Rear bumper estimate based on Alto bumper market
+Suzuki,Alto,2004,2022,headlight/front lamp,used/reconditioned,35000,45000,6000,12000,ikman public listings,market_reference,Alto HA36 head lamp listing range
+Suzuki,Alto,2004,2022,rear lamp/light,used/reconditioned,10000,22000,6000,12000,ikman public listings,market_reference,Alto tail light listing range
+Suzuki,Alto,2004,2022,windshield,new/replacement,35000,55000,8000,18000,windscreen suppliers/public market,market_reference,Windscreen estimate for small hatchback
+Suzuki,Alto,2004,2022,hood/front shell,used/reconditioned,22000,30000,15000,30000,ikman public listings,market_reference,Alto bonnet listing range
+Suzuki,Alto,2004,2022,tailgate,used/reconditioned,35000,75000,20000,40000,public market reference,market_reference,Tailgate estimate
+Suzuki,Alto,2004,2022,fender/body panel,used/reconditioned,15000,22000,12000,30000,ikman public listings,market_reference,Alto fender/body panel estimate
+Suzuki,Alto,2004,2022,front body panel,repair/paint,15000,45000,18000,40000,garage labour estimate,labour_reference,Small car front panel repair
+Suzuki,Alto,2004,2022,rear body panel,repair/paint,15000,45000,18000,40000,garage labour estimate,labour_reference,Small car rear panel repair
+Suzuki,Alto,2004,2022,wheel/tire,used/new,10000,22000,3000,8000,ikman tyre/public listings,market_reference,Small car tyre/wheel range
+
+Honda,Fit,2010,2020,front bumper,used/reconditioned,28000,90000,15000,35000,ikman public listings,market_reference,Fit GP5 and Fit Shuttle bumper listings
+Honda,Fit,2010,2020,rear bumper,used/reconditioned,20000,45000,15000,35000,ikman public listings,market_reference,Fit rear bumper listings
+Honda,Fit,2010,2020,headlight/front lamp,used/reconditioned,10000,65000,8000,15000,ikman public listings,market_reference,Fit GP5 head light listings vary by type
+Honda,Fit,2010,2020,rear lamp/light,used/reconditioned,17000,28000,8000,15000,ikman public listings,market_reference,Fit tail light listings
+Honda,Fit,2010,2020,windshield,new/replacement,80000,90000,10000,20000,ikman/windscreen suppliers,market_reference,Fit Shuttle heat windscreen listing used as upper reference
+Honda,Fit,2010,2020,hood/front shell,used/reconditioned,30000,65000,18000,40000,public market reference,market_reference,Bonnet/front shell estimate
+Honda,Fit,2010,2020,tailgate,used/reconditioned,32000,85000,25000,45000,ikman public listings,market_reference,GP1 dicky panel and tailgate estimate
+Honda,Fit,2010,2020,fender/body panel,used/reconditioned,18000,35000,15000,35000,ikman public listings,market_reference,Fit Shuttle fender listing
+Honda,Fit,2010,2020,front body panel,repair/paint,25000,70000,25000,55000,garage labour estimate,labour_reference,Front body panel repair
+Honda,Fit,2010,2020,rear body panel,repair/paint,25000,70000,25000,55000,garage labour estimate,labour_reference,Rear body panel repair
+Honda,Fit,2010,2020,wheel/tire,used/new,15000,35000,3000,8000,ikman tyre/public listings,market_reference,Small hybrid tyre/wheel range
+
+Toyota,Prius,2009,2018,front bumper,used/reconditioned,80000,275000,20000,50000,ikman/public listings,market_reference,Prius bumper prices vary heavily by variant
+Toyota,Prius,2009,2018,rear bumper,used/reconditioned,45000,120000,20000,50000,public market reference,market_reference,Rear bumper estimate
+Toyota,Prius,2009,2018,headlight/front lamp,used/reconditioned,110000,135000,8000,18000,ikman public listings,market_reference,Prius 30 LED/scoop headlight listings
+Toyota,Prius,2009,2018,rear lamp/light,used/reconditioned,35000,90000,8000,15000,public market reference,market_reference,Tail lamp estimate
+Toyota,Prius,2009,2018,windshield,new/replacement,75000,110000,12000,25000,windscreen suppliers/public market,market_reference,Windscreen estimate
+Toyota,Prius,2009,2018,hood/front shell,used/reconditioned,23000,45000,20000,45000,ikman public listings,market_reference,Prius bonnet listing range
+Toyota,Prius,2009,2018,tailgate,used/reconditioned,85000,180000,30000,60000,public market reference,market_reference,Tailgate/dicky estimate
+Toyota,Prius,2009,2018,fender/body panel,used/reconditioned,20000,35000,18000,40000,ikman public listings,market_reference,Prius fender estimate
+Toyota,Prius,2009,2018,front body panel,repair/paint,30000,90000,30000,70000,garage labour estimate,labour_reference,Front panel repair
+Toyota,Prius,2009,2018,rear body panel,repair/paint,30000,90000,30000,70000,garage labour estimate,labour_reference,Rear panel repair
+Toyota,Prius,2009,2018,wheel/tire,used/new,20000,45000,3000,10000,ikman tyre/public listings,market_reference,Hybrid car tyre/wheel range
+
+Suzuki,Wagon R,2014,2022,front bumper,used/reconditioned,25000,85000,15000,35000,ikman public listings,market_reference,Wagon R bumper listings vary by FX/FZ/Stingray
+Suzuki,Wagon R,2014,2022,rear bumper,used/reconditioned,25000,45000,15000,35000,ikman public listings,market_reference,Rear bumper estimate
+Suzuki,Wagon R,2014,2022,headlight/front lamp,used/reconditioned,30000,185000,8000,15000,ikman public listings,market_reference,Wagon R headlight varies heavily by variant
+Suzuki,Wagon R,2014,2022,rear lamp/light,used/reconditioned,15000,65000,8000,15000,ikman public listings,market_reference,Tail light range
+Suzuki,Wagon R,2014,2022,windshield,new/replacement,45000,70000,10000,20000,windscreen suppliers/public market,market_reference,Windscreen estimate
+Suzuki,Wagon R,2014,2022,hood/front shell,used/reconditioned,45000,48000,18000,35000,ikman public listings,market_reference,Bonnet range
+Suzuki,Wagon R,2014,2022,tailgate,used/reconditioned,85000,130000,25000,50000,ikman public listings,market_reference,Dickey door/tailgate range
+Suzuki,Wagon R,2014,2022,fender/body panel,used/reconditioned,28000,45000,15000,35000,public market reference,market_reference,Fender/body panel estimate
+Suzuki,Wagon R,2014,2022,front body panel,repair/paint,25000,70000,25000,55000,garage labour estimate,labour_reference,Front body panel repair
+Suzuki,Wagon R,2014,2022,rear body panel,repair/paint,25000,70000,25000,55000,garage labour estimate,labour_reference,Rear body panel repair
+Suzuki,Wagon R,2014,2022,wheel/tire,used/new,15000,35000,3000,8000,ikman tyre/public listings,market_reference,Small hybrid tyre/wheel range
