@@ -6,7 +6,7 @@ FastAPI backend for the Vehicle Damage Detection system.
 This API connects the React frontend with:
 - YOLO model inference
 - general object validation
-- balanced clean/damaged vehicle validation
+- final balanced clean/damaged vehicle validation
 - fusion logic
 - repair recommendation
 - Sri Lankan repair cost estimation
@@ -45,7 +45,7 @@ from cost_estimator import estimate_repair_cost
 app = FastAPI(
     title="Vehicle Damage Detection API",
     description="AI-powered vehicle damage detection, validation, repair recommendation, user confirmation, and Sri Lankan repair cost estimation API.",
-    version="1.5.0"
+    version="1.6.0"
 )
 
 
@@ -127,6 +127,8 @@ class ConfirmedEstimateRequest(BaseModel):
 def get_loaded_models():
     """
     Loads vehicle-damage YOLO models only once.
+    First request may take some time.
+    After that, the same models are reused.
     """
     global MODELS
 
@@ -439,16 +441,13 @@ def validate_general_vehicle_context(image_path: Path):
 
 def validate_vehicle_damage_input(raw_results, general_validation=None):
     """
-    Balanced validation for vehicle damage images.
+    Final balanced validation for vehicle damage images.
 
-    This function tries to balance two risks:
-    1. Clean vehicles being falsely detected as damaged.
-    2. Real damaged vehicles being rejected too strictly.
-
-    Final rule:
+    Main rule:
     - Non-vehicle images are rejected.
-    - Clean full-vehicle images with weak damage evidence are rejected.
-    - Real damaged images are allowed when at least one reliable damage signal exists.
+    - Full vehicle + minor/weak prediction is rejected and user is asked for a closer damage photo.
+    - Full vehicle + moderate/severe prediction with model evidence is accepted.
+    - Close-up damage photo is accepted with lower threshold.
     """
 
     general_details = (general_validation or {}).get("details", {})
@@ -513,7 +512,10 @@ def validate_vehicle_damage_input(raw_results, general_validation=None):
         or "damaged" in damage_class_name
     ) and not classifier_says_whole
 
-    # Actual damage evidence from detector / segmenter / damaged-part support.
+    severity_is_minor = "minor" in severity_name
+    severity_is_moderate = "moderate" in severity_name
+    severity_is_severe = "severe" in severity_name
+
     detector_signal = damage_detection_conf >= 0.45
     segmenter_signal = damage_segmentation_conf >= 0.45
     damaged_part_signal = damaged_part_support_conf >= 0.45
@@ -521,6 +523,10 @@ def validate_vehicle_damage_input(raw_results, general_validation=None):
     strong_detector_signal = damage_detection_conf >= 0.62
     strong_segmenter_signal = damage_segmentation_conf >= 0.62
     strong_damaged_part_signal = damaged_part_support_conf >= 0.60
+
+    very_strong_detector_signal = damage_detection_conf >= 0.72
+    very_strong_segmenter_signal = damage_segmentation_conf >= 0.72
+    very_strong_damaged_part_signal = damaged_part_support_conf >= 0.70
 
     support_signal = (
         classifier_says_damaged and damage_class_conf >= 0.85
@@ -542,26 +548,6 @@ def validate_vehicle_damage_input(raw_results, general_validation=None):
     if support_signal:
         signal_count += 1
 
-    # Whole-vehicle photos are more risky for false positives,
-    # so we need either one strong signal or two medium signals.
-    if whole_vehicle_view:
-        reliable_damage_signal = (
-            strong_detector_signal
-            or strong_segmenter_signal
-            or strong_damaged_part_signal
-            or signal_count >= 2
-        )
-    else:
-        reliable_damage_signal = (
-            detector_signal
-            or segmenter_signal
-            or damaged_part_signal
-            or (
-                support_signal
-                and damage_signal_confidence >= 0.35
-            )
-        )
-
     windshield_or_glass_prediction = (
         "glass" in best_damage_name
         or "glass" in archive5_name
@@ -570,19 +556,69 @@ def validate_vehicle_damage_input(raw_results, general_validation=None):
         or "front_glass" in best_car_part_name
     )
 
-    # Clean vehicle false-positive protection.
-    # This catches clean full-vehicle photos that become "minor windshield/glass/dent".
+    lamp_prediction = (
+        "lamp" in best_damage_name
+        or "lamp" in archive5_name
+        or "lamp" in best_car_part_name
+        or "lamp" in best_damaged_part_name
+        or "light" in best_car_part_name
+        or "light" in best_damaged_part_name
+    )
+
+    closeup_damage_signal = (
+        detector_signal
+        or segmenter_signal
+        or damaged_part_signal
+        or (
+            support_signal
+            and damage_signal_confidence >= 0.35
+        )
+    )
+
+    whole_vehicle_moderate_or_severe_signal = (
+        whole_vehicle_view
+        and (severity_is_moderate or severity_is_severe)
+        and (
+            strong_detector_signal
+            or strong_segmenter_signal
+            or strong_damaged_part_signal
+            or signal_count >= 2
+        )
+    )
+
+    whole_vehicle_minor_signal = (
+        whole_vehicle_view
+        and severity_is_minor
+        and (
+            very_strong_detector_signal
+            or very_strong_segmenter_signal
+            or very_strong_damaged_part_signal
+            or (
+                signal_count >= 3
+                and damage_signal_confidence >= 0.50
+            )
+        )
+    )
+
+    if whole_vehicle_view:
+        reliable_damage_signal = (
+            whole_vehicle_moderate_or_severe_signal
+            or whole_vehicle_minor_signal
+        )
+    else:
+        reliable_damage_signal = closeup_damage_signal
+
     clean_whole_vehicle_risk = (
         whole_vehicle_view
+        and severity_is_minor
         and (
             windshield_or_glass_prediction
-            or "minor" in severity_name
-            or severity_conf < 0.70
+            or lamp_prediction
+            or signal_count < 3
         )
-        and not strong_detector_signal
-        and not strong_segmenter_signal
-        and not strong_damaged_part_signal
-        and signal_count < 2
+        and not very_strong_detector_signal
+        and not very_strong_segmenter_signal
+        and not very_strong_damaged_part_signal
     )
 
     weak_whole_vehicle_signal = (
@@ -597,16 +633,25 @@ def validate_vehicle_damage_input(raw_results, general_validation=None):
         "whole_vehicle_view": whole_vehicle_view,
         "vehicle_area_ratio": round(vehicle_area_ratio, 4),
         "general_vehicle_confidence": round(general_vehicle_confidence, 4),
+        "severity_is_minor": severity_is_minor,
+        "severity_is_moderate": severity_is_moderate,
+        "severity_is_severe": severity_is_severe,
         "detector_signal": detector_signal,
         "segmenter_signal": segmenter_signal,
         "damaged_part_signal": damaged_part_signal,
         "strong_detector_signal": strong_detector_signal,
         "strong_segmenter_signal": strong_segmenter_signal,
         "strong_damaged_part_signal": strong_damaged_part_signal,
+        "very_strong_detector_signal": very_strong_detector_signal,
+        "very_strong_segmenter_signal": very_strong_segmenter_signal,
+        "very_strong_damaged_part_signal": very_strong_damaged_part_signal,
         "support_signal": support_signal,
         "signal_count": signal_count,
+        "whole_vehicle_moderate_or_severe_signal": whole_vehicle_moderate_or_severe_signal,
+        "whole_vehicle_minor_signal": whole_vehicle_minor_signal,
         "reliable_damage_signal": reliable_damage_signal,
         "windshield_or_glass_prediction": windshield_or_glass_prediction,
+        "lamp_prediction": lamp_prediction,
         "clean_whole_vehicle_risk": clean_whole_vehicle_risk,
         "weak_whole_vehicle_signal": weak_whole_vehicle_signal,
         "damage_classifier": {
