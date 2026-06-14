@@ -5,7 +5,8 @@ FastAPI backend for the Vehicle Damage Detection system.
 
 This API connects the React frontend with:
 - YOLO model inference
-- input validation
+- general object validation
+- vehicle damage input validation
 - fusion logic
 - repair recommendation
 - Sri Lankan repair cost estimation
@@ -44,8 +45,8 @@ from cost_estimator import estimate_repair_cost
 
 app = FastAPI(
     title="Vehicle Damage Detection API",
-    description="AI-powered vehicle damage detection, input validation, repair recommendation, user confirmation, and Sri Lankan repair cost estimation API.",
-    version="1.2.0"
+    description="AI-powered vehicle damage detection, validation, repair recommendation, user confirmation, and Sri Lankan repair cost estimation API.",
+    version="1.3.0"
 )
 
 
@@ -65,6 +66,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 MODELS = None
+GENERAL_OBJECT_MODEL = None
 
 
 SUPPORTED_VEHICLES = [
@@ -133,18 +135,42 @@ class ConfirmedEstimateRequest(BaseModel):
 
 def get_loaded_models():
     """
-    Loads YOLO models only once.
+    Loads vehicle-damage YOLO models only once.
     First request may take some time.
     After that, the same models are reused.
     """
     global MODELS
 
     if MODELS is None:
-        print("Loading YOLO models...")
+        print("Loading vehicle damage models...")
         MODELS = load_models()
-        print("Models loaded successfully.")
+        print("Vehicle damage models loaded successfully.")
 
     return MODELS
+
+
+def get_general_object_model():
+    """
+    Loads a small general YOLO model for safety validation.
+
+    This model is used only to detect obvious non-vehicle images such as
+    person, dog, laptop, chair, etc. It helps prevent unrelated images
+    from going into repair-cost estimation.
+    """
+    global GENERAL_OBJECT_MODEL
+
+    if GENERAL_OBJECT_MODEL is None:
+        try:
+            from ultralytics import YOLO
+
+            print("Loading general object validation model...")
+            GENERAL_OBJECT_MODEL = YOLO("yolov8n.pt")
+            print("General object validation model loaded successfully.")
+        except Exception as error:
+            print(f"General object validation model could not be loaded: {error}")
+            GENERAL_OBJECT_MODEL = False
+
+    return GENERAL_OBJECT_MODEL
 
 
 def make_json_safe(value: Any):
@@ -244,6 +270,177 @@ def get_confidence(prediction):
         return 0.0
 
 
+def validate_general_vehicle_context(image_path: Path):
+    """
+    Uses a general COCO object detector to reject obvious non-vehicle images.
+
+    Examples rejected:
+    - person photo
+    - dog/cat photo
+    - laptop/room photo
+    - chair/bed/table photo
+
+    Important:
+    If no obvious object is detected, we continue. This is because close-up
+    bumper/dent photos may not show the full car.
+    """
+
+    model = get_general_object_model()
+
+    # If the general model cannot load, do not block the full system.
+    # Custom validation will still run after this.
+    if model is False:
+        return {
+            "valid": True,
+            "reason_code": "general_validator_unavailable",
+            "message": "General object validator unavailable. Continuing with custom validation.",
+            "details": {}
+        }
+
+    try:
+        results = model(str(image_path), conf=0.25, verbose=False)
+    except Exception as error:
+        return {
+            "valid": True,
+            "reason_code": "general_validator_error",
+            "message": f"General object validator error: {error}. Continuing with custom validation.",
+            "details": {}
+        }
+
+    vehicle_classes = {
+        "car",
+        "motorcycle",
+        "bus",
+        "truck",
+    }
+
+    obvious_non_vehicle_classes = {
+        "person",
+        "bicycle",
+        "dog",
+        "cat",
+        "bird",
+        "horse",
+        "sheep",
+        "cow",
+        "elephant",
+        "bear",
+        "zebra",
+        "giraffe",
+        "backpack",
+        "handbag",
+        "suitcase",
+        "bottle",
+        "cup",
+        "fork",
+        "knife",
+        "spoon",
+        "bowl",
+        "banana",
+        "apple",
+        "sandwich",
+        "orange",
+        "broccoli",
+        "carrot",
+        "pizza",
+        "donut",
+        "cake",
+        "chair",
+        "couch",
+        "bed",
+        "dining table",
+        "toilet",
+        "tv",
+        "laptop",
+        "mouse",
+        "remote",
+        "keyboard",
+        "cell phone",
+        "microwave",
+        "oven",
+        "sink",
+        "refrigerator",
+        "book",
+        "clock",
+        "vase",
+        "scissors",
+        "teddy bear",
+    }
+
+    detected_objects = []
+    vehicle_confidence = 0.0
+    non_vehicle_confidence = 0.0
+    strongest_non_vehicle = None
+
+    for result in results:
+        names = result.names
+
+        if result.boxes is None:
+            continue
+
+        for box in result.boxes:
+            class_id = int(box.cls[0])
+            class_name = str(names[class_id]).lower()
+            confidence = float(box.conf[0])
+
+            detected_objects.append({
+                "class_name": class_name,
+                "confidence": round(confidence, 4),
+            })
+
+            if class_name in vehicle_classes:
+                vehicle_confidence = max(vehicle_confidence, confidence)
+
+            if class_name in obvious_non_vehicle_classes:
+                if confidence > non_vehicle_confidence:
+                    non_vehicle_confidence = confidence
+                    strongest_non_vehicle = class_name
+
+    # If a clear vehicle is detected, allow custom vehicle-damage validation.
+    if vehicle_confidence >= 0.35:
+        return {
+            "valid": True,
+            "reason_code": "vehicle_context_detected",
+            "message": "Vehicle context detected.",
+            "details": {
+                "vehicle_confidence": round(vehicle_confidence, 4),
+                "non_vehicle_confidence": round(non_vehicle_confidence, 4),
+                "strongest_non_vehicle": strongest_non_vehicle,
+                "detected_objects": detected_objects[:10],
+            }
+        }
+
+    # If no vehicle is detected but a person/dog/laptop/etc. is detected,
+    # reject before custom damage models create false positives.
+    if vehicle_confidence < 0.35 and non_vehicle_confidence >= 0.45:
+        return {
+            "valid": False,
+            "reason_code": "obvious_non_vehicle_image",
+            "message": (
+                f"This image appears to contain '{strongest_non_vehicle}', not a vehicle damage area. "
+                "Please upload a clear photo of a damaged vehicle."
+            ),
+            "details": {
+                "vehicle_confidence": round(vehicle_confidence, 4),
+                "non_vehicle_confidence": round(non_vehicle_confidence, 4),
+                "strongest_non_vehicle": strongest_non_vehicle,
+                "detected_objects": detected_objects[:10],
+            }
+        }
+
+    return {
+        "valid": True,
+        "reason_code": "no_obvious_non_vehicle_object",
+        "message": "No obvious non-vehicle object detected. Continuing with custom validation.",
+        "details": {
+            "vehicle_confidence": round(vehicle_confidence, 4),
+            "non_vehicle_confidence": round(non_vehicle_confidence, 4),
+            "strongest_non_vehicle": strongest_non_vehicle,
+            "detected_objects": detected_objects[:10],
+        }
+    }
+
+
 def validate_vehicle_damage_input(raw_results):
     """
     Checks whether the uploaded image is suitable for vehicle damage analysis.
@@ -253,9 +450,9 @@ def validate_vehicle_damage_input(raw_results):
     - clean vehicle images being forced into a repair-cost estimate
     - weak false-positive detections going to cost estimation
 
-    The validation uses two signals:
-    1. vehicle evidence from car-part models
-    2. damage evidence from damage detection/segmentation models
+    Stronger rule:
+    A vehicle image is accepted only when there is reliable damage evidence.
+    A clean vehicle or unclear full-vehicle photo is stopped before cost estimation.
     """
 
     damage_classifier = raw_results.get("damage_classifier", {})
@@ -288,16 +485,49 @@ def validate_vehicle_damage_input(raw_results):
         or damaged_part_support_conf >= 0.35
     )
 
-    # Damage evidence:
-    # Main damage detector or damage segmentation should have a reliable confidence.
-    damage_signal = (
-        damage_detection_conf >= 0.45
-        or damage_segmentation_conf >= 0.45
+    classifier_says_whole = (
+        "whole" in damage_class_name
+        or "undamaged" in damage_class_name
+        or "no damage" in damage_class_name
+        or "normal" in damage_class_name
+    )
+
+    classifier_says_damaged = (
+        "damage" in damage_class_name
+        or "damaged" in damage_class_name
+    ) and not classifier_says_whole
+
+    # Strong evidence from actual damage detector/segmenter.
+    # This is intentionally stricter than before to stop clean vehicles.
+    strong_damage_detector = damage_detection_conf >= 0.70
+    strong_damage_segmenter = damage_segmentation_conf >= 0.70
+
+    # Medium evidence is trusted only when more than one model agrees.
+    medium_damage_detector = damage_detection_conf >= 0.55
+    medium_damage_segmenter = damage_segmentation_conf >= 0.55
+
+    damage_evidence_count = 0
+
+    if medium_damage_detector:
+        damage_evidence_count += 1
+
+    if medium_damage_segmenter:
+        damage_evidence_count += 1
+
+    if classifier_says_damaged and damage_class_conf >= 0.80:
+        damage_evidence_count += 1
+
+    reliable_damage_signal = (
+        strong_damage_detector
+        or strong_damage_segmenter
+        or damage_evidence_count >= 2
     )
 
     validation_details = {
         "vehicle_signal_confidence": round(vehicle_signal_confidence, 4),
         "damage_signal_confidence": round(damage_signal_confidence, 4),
+        "damage_evidence_count": damage_evidence_count,
+        "reliable_damage_signal": reliable_damage_signal,
         "damage_classifier": {
             "class_name": damage_class_name,
             "confidence": round(damage_class_conf, 4),
@@ -321,7 +551,7 @@ def validate_vehicle_damage_input(raw_results):
     }
 
     # Case 1: Random image, person image, room image, food image, etc.
-    if not vehicle_signal and not damage_signal:
+    if not vehicle_signal and not reliable_damage_signal:
         return {
             "valid": False,
             "reason_code": "not_vehicle_damage_image",
@@ -329,8 +559,8 @@ def validate_vehicle_damage_input(raw_results):
             "details": validation_details,
         }
 
-    # Case 2: Something looks damaged, but the system cannot confirm it is a vehicle.
-    if not vehicle_signal and damage_signal:
+    # Case 2: Something looks damaged, but the system cannot confirm that it is a vehicle.
+    if not vehicle_signal and reliable_damage_signal:
         return {
             "valid": False,
             "reason_code": "vehicle_part_not_confirmed",
@@ -338,8 +568,9 @@ def validate_vehicle_damage_input(raw_results):
             "details": validation_details,
         }
 
-    # Case 3: Vehicle/vehicle part is visible, but no reliable damage is found.
-    if vehicle_signal and not damage_signal:
+    # Case 3: Vehicle is visible, but damage is not reliable enough.
+    # This is the important fix for clean vehicle photos.
+    if vehicle_signal and not reliable_damage_signal:
         return {
             "valid": False,
             "reason_code": "no_clear_damage_detected",
@@ -347,13 +578,12 @@ def validate_vehicle_damage_input(raw_results):
             "details": validation_details,
         }
 
-    # Case 4: Archive1 strongly says the image is a whole/undamaged vehicle,
-    # and damage detector/segmenter evidence is still weak.
+    # Case 4: Classifier strongly says whole/undamaged and detection evidence is not very strong.
     if (
-        damage_class_name in ["01-whole", "whole", "no damage", "undamaged"]
-        and damage_class_conf >= 0.80
-        and damage_detection_conf < 0.55
-        and damage_segmentation_conf < 0.55
+        classifier_says_whole
+        and damage_class_conf >= 0.75
+        and not strong_damage_detector
+        and not strong_damage_segmenter
     ):
         return {
             "valid": False,
@@ -422,12 +652,27 @@ def analyze_single_image(image_path: Path, original_filename: str, brand: str, m
     """
     Runs full AI pipeline for one image.
 
-    New safety flow:
-    1. Run all models
-    2. Validate whether image is suitable
-    3. If invalid, return clear error message
-    4. If valid, continue to fusion, repair rules, and cost estimation
+    Safety flow:
+    1. Run general object validation
+    2. Reject obvious non-vehicle images
+    3. Run vehicle-damage models
+    4. Validate vehicle/damage evidence
+    5. Continue to fusion, repair rules, and cost estimation only if valid
     """
+
+    general_validation = validate_general_vehicle_context(image_path)
+
+    if not general_validation["valid"]:
+        return make_json_safe({
+            "filename": original_filename,
+            "saved_image_path": str(image_path),
+            "input_validation": general_validation,
+            "general_validation": general_validation,
+            "model_output_summary": {},
+            "error": general_validation["message"],
+            "next_step": general_validation["reason_code"],
+        })
+
     models = get_loaded_models()
 
     raw_results = run_all_models(image_path, models=models)
@@ -439,6 +684,7 @@ def analyze_single_image(image_path: Path, original_filename: str, brand: str, m
             "filename": original_filename,
             "saved_image_path": str(image_path),
             "input_validation": input_validation,
+            "general_validation": general_validation,
             "model_output_summary": build_model_output_summary(raw_results),
             "error": input_validation["message"],
             "next_step": input_validation["reason_code"],
@@ -465,17 +711,13 @@ def analyze_single_image(image_path: Path, original_filename: str, brand: str, m
         "filename": original_filename,
         "saved_image_path": str(image_path),
         "input_validation": input_validation,
+        "general_validation": general_validation,
         "model_output_summary": build_model_output_summary(raw_results),
 
-        # AI output
         "final_fused_result": fused_result,
         "repair_recommendation": repair_result,
-
-        # Existing automatic estimate
-        # Frontend can show this as preliminary estimate.
         "cost_estimation": cost_result,
 
-        # Confirmation information
         "confirmation_status": confirmation_status,
         "next_step": (
             "confirm_result_before_final_estimate"
