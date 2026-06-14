@@ -6,8 +6,7 @@ FastAPI backend for the Vehicle Damage Detection system.
 This API connects the React frontend with:
 - YOLO model inference
 - general object validation
-- clean vehicle validation
-- vehicle damage input validation
+- balanced clean/damaged vehicle validation
 - fusion logic
 - repair recommendation
 - Sri Lankan repair cost estimation
@@ -31,7 +30,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 
-# Make sure src folder imports work correctly.
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
 
@@ -47,11 +45,10 @@ from cost_estimator import estimate_repair_cost
 app = FastAPI(
     title="Vehicle Damage Detection API",
     description="AI-powered vehicle damage detection, validation, repair recommendation, user confirmation, and Sri Lankan repair cost estimation API.",
-    version="1.4.0"
+    version="1.5.0"
 )
 
 
-# Allow React frontend to call this API.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -114,13 +111,6 @@ DAMAGE_PARTS = [
 
 
 class ConfirmedEstimateRequest(BaseModel):
-    """
-    Request body for confirmed cost estimation.
-
-    React frontend sends this after the user confirms or edits
-    the AI prediction.
-    """
-
     brand: str
     model: str
     year: int
@@ -137,8 +127,6 @@ class ConfirmedEstimateRequest(BaseModel):
 def get_loaded_models():
     """
     Loads vehicle-damage YOLO models only once.
-    First request may take some time.
-    After that, the same models are reused.
     """
     global MODELS
 
@@ -152,10 +140,10 @@ def get_loaded_models():
 
 def get_general_object_model():
     """
-    Loads a small general YOLO model for safety validation.
+    Loads a general YOLO model for safety validation.
 
-    This model is used only to detect obvious non-vehicle images such as
-    person, dog, laptop, chair, etc. It also helps detect full vehicle photos.
+    This catches obvious non-vehicle images such as person, dog, laptop,
+    chair, etc. It also helps identify full vehicle photos.
     """
     global GENERAL_OBJECT_MODEL
 
@@ -176,7 +164,6 @@ def get_general_object_model():
 def make_json_safe(value: Any):
     """
     Converts Python objects into JSON-safe values.
-    This prevents JSON response errors from numpy/path/custom objects.
     """
     if isinstance(value, dict):
         return {
@@ -241,8 +228,7 @@ def save_upload_file(upload_file: UploadFile) -> Path:
 
 def build_model_output_summary(raw_results):
     """
-    Creates a small readable summary of raw model outputs.
-    Useful for frontend display/debugging.
+    Creates a readable summary of raw model outputs.
     """
     return {
         "damage_classifier": raw_results.get("damage_classifier"),
@@ -274,11 +260,7 @@ def validate_general_vehicle_context(image_path: Path):
     """
     Uses a general COCO object detector to:
     1. Reject obvious non-vehicle images.
-    2. Detect whether the uploaded image is a whole-vehicle view.
-
-    This helps with:
-    - person / dog / laptop / room rejection
-    - clean whole-vehicle photos that should not go to repair-cost estimation
+    2. Detect whether the uploaded image is a full / whole vehicle view.
     """
 
     model = get_general_object_model()
@@ -457,15 +439,16 @@ def validate_general_vehicle_context(image_path: Path):
 
 def validate_vehicle_damage_input(raw_results, general_validation=None):
     """
-    Checks whether the uploaded image is suitable for vehicle damage analysis.
+    Balanced validation for vehicle damage images.
 
-    Strong rule:
+    This function tries to balance two risks:
+    1. Clean vehicles being falsely detected as damaged.
+    2. Real damaged vehicles being rejected too strictly.
+
+    Final rule:
     - Non-vehicle images are rejected.
-    - Clean whole-vehicle images are rejected.
-    - A vehicle photo is accepted only when damage evidence is reliable.
-
-    This prevents full clean vehicle photos from being forced into
-    glass shatter / dent / scratch predictions.
+    - Clean full-vehicle images with weak damage evidence are rejected.
+    - Real damaged images are allowed when at least one reliable damage signal exists.
     """
 
     general_details = (general_validation or {}).get("details", {})
@@ -500,8 +483,17 @@ def validate_vehicle_damage_input(raw_results, general_validation=None):
     best_car_part_name = str(best_car_part.get("class_name", "")).lower() if best_car_part else ""
     best_damaged_part_name = str(best_damaged_part_support.get("class_name", "")).lower() if best_damaged_part_support else ""
 
-    vehicle_signal_confidence = max(car_part_conf, damaged_part_support_conf, general_vehicle_confidence)
-    damage_signal_confidence = max(damage_detection_conf, damage_segmentation_conf)
+    vehicle_signal_confidence = max(
+        car_part_conf,
+        damaged_part_support_conf,
+        general_vehicle_confidence
+    )
+
+    damage_signal_confidence = max(
+        damage_detection_conf,
+        damage_segmentation_conf,
+        damaged_part_support_conf
+    )
 
     vehicle_signal = (
         car_part_conf >= 0.45
@@ -521,63 +513,102 @@ def validate_vehicle_damage_input(raw_results, general_validation=None):
         or "damaged" in damage_class_name
     ) and not classifier_says_whole
 
-    strong_damage_detector = damage_detection_conf >= 0.75
-    strong_damage_segmenter = damage_segmentation_conf >= 0.75
+    # Actual damage evidence from detector / segmenter / damaged-part support.
+    detector_signal = damage_detection_conf >= 0.45
+    segmenter_signal = damage_segmentation_conf >= 0.45
+    damaged_part_signal = damaged_part_support_conf >= 0.45
 
-    medium_damage_detector = damage_detection_conf >= 0.60
-    medium_damage_segmenter = damage_segmentation_conf >= 0.60
-    medium_archive5_damage = archive5_conf >= 0.75 and archive5_name not in ["", "unknown"]
+    strong_detector_signal = damage_detection_conf >= 0.62
+    strong_segmenter_signal = damage_segmentation_conf >= 0.62
+    strong_damaged_part_signal = damaged_part_support_conf >= 0.60
 
-    damage_evidence_count = 0
-
-    if medium_damage_detector:
-        damage_evidence_count += 1
-
-    if medium_damage_segmenter:
-        damage_evidence_count += 1
-
-    if classifier_says_damaged and damage_class_conf >= 0.85:
-        damage_evidence_count += 1
-
-    if medium_archive5_damage:
-        damage_evidence_count += 1
-
-    reliable_damage_signal = (
-        strong_damage_detector
-        or strong_damage_segmenter
-        or damage_evidence_count >= 2
+    support_signal = (
+        classifier_says_damaged and damage_class_conf >= 0.85
+    ) or (
+        archive5_conf >= 0.85 and archive5_name not in ["", "unknown"]
     )
 
-    glass_or_windshield_false_positive_risk = (
+    signal_count = 0
+
+    if detector_signal:
+        signal_count += 1
+
+    if segmenter_signal:
+        signal_count += 1
+
+    if damaged_part_signal:
+        signal_count += 1
+
+    if support_signal:
+        signal_count += 1
+
+    # Whole-vehicle photos are more risky for false positives,
+    # so we need either one strong signal or two medium signals.
+    if whole_vehicle_view:
+        reliable_damage_signal = (
+            strong_detector_signal
+            or strong_segmenter_signal
+            or strong_damaged_part_signal
+            or signal_count >= 2
+        )
+    else:
+        reliable_damage_signal = (
+            detector_signal
+            or segmenter_signal
+            or damaged_part_signal
+            or (
+                support_signal
+                and damage_signal_confidence >= 0.35
+            )
+        )
+
+    windshield_or_glass_prediction = (
+        "glass" in best_damage_name
+        or "glass" in archive5_name
+        or "windshield" in best_car_part_name
+        or "windshield" in best_damaged_part_name
+        or "front_glass" in best_car_part_name
+    )
+
+    # Clean vehicle false-positive protection.
+    # This catches clean full-vehicle photos that become "minor windshield/glass/dent".
+    clean_whole_vehicle_risk = (
         whole_vehicle_view
         and (
-            "glass" in best_damage_name
-            or "glass" in archive5_name
-            or "windshield" in best_car_part_name
-            or "windshield" in best_damaged_part_name
-            or "front_glass" in best_car_part_name
+            windshield_or_glass_prediction
+            or "minor" in severity_name
+            or severity_conf < 0.70
         )
-        and damage_detection_conf < 0.90
-        and damage_segmentation_conf < 0.90
+        and not strong_detector_signal
+        and not strong_segmenter_signal
+        and not strong_damaged_part_signal
+        and signal_count < 2
     )
 
-    weak_minor_damage_on_full_vehicle = (
+    weak_whole_vehicle_signal = (
         whole_vehicle_view
-        and ("minor" in severity_name or severity_conf < 0.70)
-        and damage_detection_conf < 0.90
-        and damage_segmentation_conf < 0.90
+        and damage_signal_confidence < 0.45
+        and damaged_part_support_conf < 0.45
     )
 
     validation_details = {
         "vehicle_signal_confidence": round(vehicle_signal_confidence, 4),
         "damage_signal_confidence": round(damage_signal_confidence, 4),
-        "damage_evidence_count": damage_evidence_count,
-        "reliable_damage_signal": reliable_damage_signal,
         "whole_vehicle_view": whole_vehicle_view,
         "vehicle_area_ratio": round(vehicle_area_ratio, 4),
         "general_vehicle_confidence": round(general_vehicle_confidence, 4),
-        "glass_or_windshield_false_positive_risk": glass_or_windshield_false_positive_risk,
-        "weak_minor_damage_on_full_vehicle": weak_minor_damage_on_full_vehicle,
+        "detector_signal": detector_signal,
+        "segmenter_signal": segmenter_signal,
+        "damaged_part_signal": damaged_part_signal,
+        "strong_detector_signal": strong_detector_signal,
+        "strong_segmenter_signal": strong_segmenter_signal,
+        "strong_damaged_part_signal": strong_damaged_part_signal,
+        "support_signal": support_signal,
+        "signal_count": signal_count,
+        "reliable_damage_signal": reliable_damage_signal,
+        "windshield_or_glass_prediction": windshield_or_glass_prediction,
+        "clean_whole_vehicle_risk": clean_whole_vehicle_risk,
+        "weak_whole_vehicle_signal": weak_whole_vehicle_signal,
         "damage_classifier": {
             "class_name": damage_class_name,
             "confidence": round(damage_class_conf, 4),
@@ -632,13 +663,7 @@ def validate_vehicle_damage_input(raw_results, general_validation=None):
             "details": validation_details,
         }
 
-    if (
-        whole_vehicle_view
-        and (
-            glass_or_windshield_false_positive_risk
-            or weak_minor_damage_on_full_vehicle
-        )
-    ):
+    if clean_whole_vehicle_risk or weak_whole_vehicle_signal:
         return {
             "valid": False,
             "reason_code": "vehicle_no_damage",
@@ -649,8 +674,9 @@ def validate_vehicle_damage_input(raw_results, general_validation=None):
     if (
         classifier_says_whole
         and damage_class_conf >= 0.75
-        and not strong_damage_detector
-        and not strong_damage_segmenter
+        and not strong_detector_signal
+        and not strong_segmenter_signal
+        and not strong_damaged_part_signal
     ):
         return {
             "valid": False,
@@ -670,13 +696,6 @@ def validate_vehicle_damage_input(raw_results, general_validation=None):
 def build_confirmation_status(fused_result, repair_result):
     """
     Tells frontend whether user confirmation is required.
-
-    Confirmation is required when:
-    - model confidence is low
-    - part prediction is uncertain
-    - severity is uncertain
-    - multiple parts may affect cost
-    - manual inspection is recommended
     """
 
     confirmation_reasons = []
@@ -717,13 +736,6 @@ def build_confirmation_status(fused_result, repair_result):
 def analyze_single_image(image_path: Path, original_filename: str, brand: str, model: str, year: int):
     """
     Runs full AI pipeline for one image.
-
-    Safety flow:
-    1. Run general object validation
-    2. Reject obvious non-vehicle images
-    3. Run vehicle-damage models
-    4. Validate vehicle/damage evidence
-    5. Continue to fusion, repair rules, and cost estimation only if valid
     """
 
     general_validation = validate_general_vehicle_context(image_path)
@@ -798,9 +810,6 @@ def analyze_single_image(image_path: Path, original_filename: str, brand: str, m
 def build_user_confirmed_fused_result(request: ConfirmedEstimateRequest):
     """
     Builds a fused_result-style dictionary from user-confirmed data.
-
-    This lets us reuse repair_rules.py and cost_estimator.py
-    without changing those modules.
     """
 
     possible_parts = request.possible_affected_parts.copy()
@@ -873,9 +882,6 @@ def health_check():
 
 @app.get("/options")
 def get_options():
-    """
-    Gives frontend dropdown options.
-    """
     return {
         "vehicles": SUPPORTED_VEHICLES,
         "damage_types": DAMAGE_TYPES,
@@ -891,27 +897,6 @@ async def analyze_vehicle_damage(
     year: int = Form(...),
     files: List[UploadFile] = File(...)
 ):
-    """
-    Analyze one or multiple vehicle damage images.
-
-    React frontend sends:
-    - brand
-    - model
-    - year
-    - files
-
-    This returns:
-    - AI prediction
-    - preliminary repair recommendation
-    - preliminary cost estimate
-    - confirmation status
-
-    If the image is not suitable, it returns:
-    - error message
-    - input_validation details
-    - no cost estimation
-    """
-
     if not files:
         raise HTTPException(
             status_code=400,
@@ -959,19 +944,6 @@ async def analyze_vehicle_damage(
 
 @app.post("/estimate-confirmed")
 def estimate_confirmed_damage(request: ConfirmedEstimateRequest):
-    """
-    Calculates repair recommendation and cost estimation using
-    user-confirmed or user-edited damage details.
-
-    This endpoint is used after the AI result is shown to the user.
-
-    Frontend flow:
-    1. User uploads image
-    2. /analyze returns AI prediction
-    3. User confirms or edits damage details
-    4. /estimate-confirmed returns final cost estimate
-    """
-
     if request.year < 1990 or request.year > 2035:
         raise HTTPException(
             status_code=400,
