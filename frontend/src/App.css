@@ -39,7 +39,8 @@ button {
 .hero,
 .card,
 .result-card,
-.vehicle-banner {
+.vehicle-banner,
+.validation-banner {
   border: 1px solid rgba(120, 151, 183, 0.18);
   background: linear-gradient(180deg, rgba(16, 24, 36, 0.96), rgba(10, 16, 26, 0.96));
   border-radius: 20px;
@@ -77,14 +78,29 @@ button {
 }
 
 @keyframes scanMove {
-  0% { top: -2px; }
-  50% { top: 100%; }
-  100% { top: -2px; }
+  0% {
+    top: -2px;
+  }
+
+  50% {
+    top: 100%;
+  }
+
+  100% {
+    top: -2px;
+  }
 }
 
 @keyframes pulseGlow {
-  from { transform: scale(1); opacity: 0.22; }
-  to { transform: scale(1.12); opacity: 0.38; }
+  from {
+    transform: scale(1);
+    opacity: 0.22;
+  }
+
+  to {
+    transform: scale(1.12);
+    opacity: 0.38;
+  }
 }
 
 .top-row {
@@ -156,7 +172,8 @@ button {
 
 .card,
 .result-card,
-.vehicle-banner {
+.vehicle-banner,
+.validation-banner {
   margin-top: 12px;
   padding: 16px;
 }
@@ -338,7 +355,9 @@ input:focus {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .camera-modal {
@@ -404,6 +423,65 @@ input:focus {
 .vehicle-banner p {
   margin: 5px 0 0;
   color: #cbd5e1;
+}
+
+.validation-banner {
+  background: linear-gradient(135deg, rgba(120, 53, 15, 0.92), rgba(69, 26, 3, 0.92));
+  border: 1px solid rgba(245, 158, 11, 0.28);
+}
+
+.validation-banner span {
+  color: #fcd34d;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 950;
+}
+
+.validation-banner strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 21px;
+  color: #fff7ed;
+}
+
+.validation-banner p {
+  margin: 6px 0 0;
+  color: #fed7aa;
+  line-height: 1.45;
+}
+
+.validation-result-card {
+  border-color: rgba(245, 158, 11, 0.22);
+  background: linear-gradient(180deg, rgba(20, 20, 18, 0.96), rgba(12, 16, 24, 0.96));
+}
+
+.validation-card-head span {
+  color: #fcd34d;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 950;
+}
+
+.validation-card-head h3 {
+  margin: 6px 0 0;
+  color: #fff7ed;
+  font-size: 22px;
+}
+
+.validation-warning {
+  font-size: 15px;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.validation-help {
+  margin: 11px 0 0;
+  color: #cbd5e1;
+  line-height: 1.45;
+  font-size: 13px;
+  text-align: center;
 }
 
 .result-head h3 {
@@ -550,7 +628,9 @@ input:focus {
 }
 
 @keyframes shine {
-  to { transform: translateX(100%); }
+  to {
+    transform: translateX(100%);
+  }
 }
 
 .cost-hero span,

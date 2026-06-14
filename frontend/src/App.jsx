@@ -51,6 +51,28 @@ function makeId() {
     : `${Date.now()}-${Math.random()}`;
 }
 
+function validationTitle(item) {
+  const reasonCode = item?.input_validation?.reason_code || item?.next_step || "";
+
+  if (reasonCode === "not_vehicle_damage_image") {
+    return "Not a vehicle damage image";
+  }
+
+  if (reasonCode === "vehicle_part_not_confirmed") {
+    return "Vehicle not confirmed";
+  }
+
+  if (reasonCode === "no_clear_damage_detected") {
+    return "No clear damage detected";
+  }
+
+  if (reasonCode === "vehicle_no_damage") {
+    return "No reliable damage identified";
+  }
+
+  return "Image validation failed";
+}
+
 function PartBreakdown({ title, estimate }) {
   const parts = estimate?.matched_parts || [];
   const missing = estimate?.missing_parts || [];
@@ -119,9 +141,19 @@ function ConfirmCard({
 }) {
   if (item.error) {
     return (
-      <section className="result-card">
-        <h3>Image {index + 1}</h3>
-        <div className="warning-box">{item.error}</div>
+      <section className="result-card validation-result-card">
+        <div className="validation-card-head">
+          <span>Image validation • Image {index + 1}</span>
+          <h3>{validationTitle(item)}</h3>
+        </div>
+
+        <div className="warning-box validation-warning">
+          {item.error}
+        </div>
+
+        <p className="validation-help">
+          This image was stopped before repair-cost estimation. Please upload a clear photo of a damaged vehicle area.
+        </p>
       </section>
     );
   }
@@ -575,6 +607,12 @@ export default function App() {
 
   const imageCountText = images.length ? `${images.length} photo(s)` : "No photos";
 
+  const hasValidAnalysisResults =
+    analysisResult?.results?.some((item) => !item.error) || false;
+
+  const allAnalysisResultsInvalid =
+    analysisResult?.results?.length > 0 && !hasValidAnalysisResults;
+
   return (
     <main className="mobile-app">
       <section className="hero">
@@ -714,7 +752,7 @@ export default function App() {
         <section className="card center">
           <div className="loader"></div>
           <h3>Analyzing image</h3>
-          <p>Detecting damage type, severity, and damaged parts.</p>
+          <p>Checking vehicle evidence, damage evidence, severity, and affected parts.</p>
         </section>
       )}
 
@@ -727,13 +765,23 @@ export default function App() {
 
       {analysisResult && (
         <section className="results">
-          <div className="vehicle-banner">
-            <span>Selected vehicle</span>
-            <strong>
-              {analysisResult.vehicle.brand} {analysisResult.vehicle.model} {analysisResult.vehicle.year}
-            </strong>
-            <p>{analysisResult.image_count} image(s) analyzed</p>
-          </div>
+          {hasValidAnalysisResults && (
+            <div className="vehicle-banner">
+              <span>Selected vehicle</span>
+              <strong>
+                {analysisResult.vehicle.brand} {analysisResult.vehicle.model} {analysisResult.vehicle.year}
+              </strong>
+              <p>{analysisResult.image_count} image(s) analyzed</p>
+            </div>
+          )}
+
+          {allAnalysisResultsInvalid && (
+            <div className="validation-banner">
+              <span>Image validation</span>
+              <strong>No valid vehicle damage detected</strong>
+              <p>Please upload a clear photo of a damaged vehicle area.</p>
+            </div>
+          )}
 
           {analysisResult.results.map((item, index) => (
             <ConfirmCard
