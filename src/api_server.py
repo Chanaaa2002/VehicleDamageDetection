@@ -5,6 +5,7 @@ FastAPI backend for the Vehicle Damage Detection system.
 
 This API connects the React frontend with:
 - YOLO model inference
+- input validation
 - fusion logic
 - repair recommendation
 - Sri Lankan repair cost estimation
@@ -43,8 +44,8 @@ from cost_estimator import estimate_repair_cost
 
 app = FastAPI(
     title="Vehicle Damage Detection API",
-    description="AI-powered vehicle damage detection, repair recommendation, user confirmation, and Sri Lankan repair cost estimation API.",
-    version="1.1.0"
+    description="AI-powered vehicle damage detection, input validation, repair recommendation, user confirmation, and Sri Lankan repair cost estimation API.",
+    version="1.2.0"
 )
 
 
@@ -230,6 +231,145 @@ def build_model_output_summary(raw_results):
     }
 
 
+def get_confidence(prediction):
+    """
+    Safely reads confidence from a prediction dictionary.
+    """
+    if not prediction:
+        return 0.0
+
+    try:
+        return float(prediction.get("confidence", 0.0) or 0.0)
+    except Exception:
+        return 0.0
+
+
+def validate_vehicle_damage_input(raw_results):
+    """
+    Checks whether the uploaded image is suitable for vehicle damage analysis.
+
+    This prevents:
+    - random non-vehicle images being classified as damage
+    - clean vehicle images being forced into a repair-cost estimate
+    - weak false-positive detections going to cost estimation
+
+    The validation uses two signals:
+    1. vehicle evidence from car-part models
+    2. damage evidence from damage detection/segmentation models
+    """
+
+    damage_classifier = raw_results.get("damage_classifier", {})
+    damage_class_name = str(damage_classifier.get("class_name", "")).lower()
+    damage_class_conf = get_confidence(damage_classifier)
+
+    best_damage_detection = get_best_prediction(raw_results.get("damage_detector", {}))
+    best_damage_segmentation = get_best_prediction(raw_results.get("damage_segmenter", {}))
+    best_car_part = get_best_prediction(raw_results.get("carpart_segmenter", {}))
+    best_damaged_part_support = get_best_prediction(raw_results.get("damaged_part_support", {}))
+
+    damage_detection_conf = get_confidence(best_damage_detection)
+    damage_segmentation_conf = get_confidence(best_damage_segmentation)
+    car_part_conf = get_confidence(best_car_part)
+    damaged_part_support_conf = get_confidence(best_damaged_part_support)
+
+    best_damage_name = str(best_damage_detection.get("class_name", "")).lower() if best_damage_detection else ""
+    best_segment_name = str(best_damage_segmentation.get("class_name", "")).lower() if best_damage_segmentation else ""
+    best_car_part_name = str(best_car_part.get("class_name", "")).lower() if best_car_part else ""
+    best_damaged_part_name = str(best_damaged_part_support.get("class_name", "")).lower() if best_damaged_part_support else ""
+
+    vehicle_signal_confidence = max(car_part_conf, damaged_part_support_conf)
+    damage_signal_confidence = max(damage_detection_conf, damage_segmentation_conf)
+
+    # Vehicle evidence:
+    # carpart_segmenter predicts vehicle parts such as bumper, wheel, glass, hood, etc.
+    # damaged_part_support predicts damaged vehicle part labels.
+    vehicle_signal = (
+        car_part_conf >= 0.45
+        or damaged_part_support_conf >= 0.35
+    )
+
+    # Damage evidence:
+    # Main damage detector or damage segmentation should have a reliable confidence.
+    damage_signal = (
+        damage_detection_conf >= 0.45
+        or damage_segmentation_conf >= 0.45
+    )
+
+    validation_details = {
+        "vehicle_signal_confidence": round(vehicle_signal_confidence, 4),
+        "damage_signal_confidence": round(damage_signal_confidence, 4),
+        "damage_classifier": {
+            "class_name": damage_class_name,
+            "confidence": round(damage_class_conf, 4),
+        },
+        "best_damage_detection": {
+            "class_name": best_damage_name,
+            "confidence": round(damage_detection_conf, 4),
+        },
+        "best_damage_segmentation": {
+            "class_name": best_segment_name,
+            "confidence": round(damage_segmentation_conf, 4),
+        },
+        "best_car_part_prediction": {
+            "class_name": best_car_part_name,
+            "confidence": round(car_part_conf, 4),
+        },
+        "best_damaged_part_support": {
+            "class_name": best_damaged_part_name,
+            "confidence": round(damaged_part_support_conf, 4),
+        }
+    }
+
+    # Case 1: Random image, person image, room image, food image, etc.
+    if not vehicle_signal and not damage_signal:
+        return {
+            "valid": False,
+            "reason_code": "not_vehicle_damage_image",
+            "message": "This image does not appear to be a vehicle damage image. Please upload a clear photo of the damaged vehicle.",
+            "details": validation_details,
+        }
+
+    # Case 2: Something looks damaged, but the system cannot confirm it is a vehicle.
+    if not vehicle_signal and damage_signal:
+        return {
+            "valid": False,
+            "reason_code": "vehicle_part_not_confirmed",
+            "message": "Damage-like patterns were detected, but the system could not confirm that this is a vehicle. Please upload a clearer vehicle damage photo.",
+            "details": validation_details,
+        }
+
+    # Case 3: Vehicle/vehicle part is visible, but no reliable damage is found.
+    if vehicle_signal and not damage_signal:
+        return {
+            "valid": False,
+            "reason_code": "no_clear_damage_detected",
+            "message": "A vehicle is visible, but no clear damage was detected. Please upload a closer photo of the damaged area.",
+            "details": validation_details,
+        }
+
+    # Case 4: Archive1 strongly says the image is a whole/undamaged vehicle,
+    # and damage detector/segmenter evidence is still weak.
+    if (
+        damage_class_name in ["01-whole", "whole", "no damage", "undamaged"]
+        and damage_class_conf >= 0.80
+        and damage_detection_conf < 0.55
+        and damage_segmentation_conf < 0.55
+    ):
+        return {
+            "valid": False,
+            "reason_code": "vehicle_no_damage",
+            "message": "The image appears to show a vehicle, but no reliable damage was identified.",
+            "details": validation_details,
+        }
+
+    return {
+        "valid": True,
+        "reason_code": "valid_vehicle_damage_image",
+        "message": "Vehicle damage image accepted for analysis.",
+        "details": validation_details,
+    }
+
+
 def build_confirmation_status(fused_result, repair_result):
     """
     Tells frontend whether user confirmation is required.
@@ -281,10 +421,28 @@ def build_confirmation_status(fused_result, repair_result):
 def analyze_single_image(image_path: Path, original_filename: str, brand: str, model: str, year: int):
     """
     Runs full AI pipeline for one image.
+
+    New safety flow:
+    1. Run all models
+    2. Validate whether image is suitable
+    3. If invalid, return clear error message
+    4. If valid, continue to fusion, repair rules, and cost estimation
     """
     models = get_loaded_models()
 
     raw_results = run_all_models(image_path, models=models)
+
+    input_validation = validate_vehicle_damage_input(raw_results)
+
+    if not input_validation["valid"]:
+        return make_json_safe({
+            "filename": original_filename,
+            "saved_image_path": str(image_path),
+            "input_validation": input_validation,
+            "model_output_summary": build_model_output_summary(raw_results),
+            "error": input_validation["message"],
+            "next_step": input_validation["reason_code"],
+        })
 
     fused_result = fuse_predictions(raw_results)
 
@@ -306,6 +464,7 @@ def analyze_single_image(image_path: Path, original_filename: str, brand: str, m
     response = {
         "filename": original_filename,
         "saved_image_path": str(image_path),
+        "input_validation": input_validation,
         "model_output_summary": build_model_output_summary(raw_results),
 
         # AI output
@@ -316,7 +475,7 @@ def analyze_single_image(image_path: Path, original_filename: str, brand: str, m
         # Frontend can show this as preliminary estimate.
         "cost_estimation": cost_result,
 
-        # New confirmation information
+        # Confirmation information
         "confirmation_status": confirmation_status,
         "next_step": (
             "confirm_result_before_final_estimate"
@@ -438,6 +597,11 @@ async def analyze_vehicle_damage(
     - preliminary repair recommendation
     - preliminary cost estimate
     - confirmation status
+
+    If the image is not suitable, it returns:
+    - error message
+    - input_validation details
+    - no cost estimation
     """
 
     if not files:
