@@ -6,6 +6,7 @@ FastAPI backend for the Vehicle Damage Detection system.
 This API connects the React frontend with:
 - YOLO model inference
 - general object validation
+- clean vehicle validation
 - vehicle damage input validation
 - fusion logic
 - repair recommendation
@@ -46,7 +47,7 @@ from cost_estimator import estimate_repair_cost
 app = FastAPI(
     title="Vehicle Damage Detection API",
     description="AI-powered vehicle damage detection, validation, repair recommendation, user confirmation, and Sri Lankan repair cost estimation API.",
-    version="1.3.0"
+    version="1.4.0"
 )
 
 
@@ -154,8 +155,7 @@ def get_general_object_model():
     Loads a small general YOLO model for safety validation.
 
     This model is used only to detect obvious non-vehicle images such as
-    person, dog, laptop, chair, etc. It helps prevent unrelated images
-    from going into repair-cost estimation.
+    person, dog, laptop, chair, etc. It also helps detect full vehicle photos.
     """
     global GENERAL_OBJECT_MODEL
 
@@ -272,23 +272,17 @@ def get_confidence(prediction):
 
 def validate_general_vehicle_context(image_path: Path):
     """
-    Uses a general COCO object detector to reject obvious non-vehicle images.
+    Uses a general COCO object detector to:
+    1. Reject obvious non-vehicle images.
+    2. Detect whether the uploaded image is a whole-vehicle view.
 
-    Examples rejected:
-    - person photo
-    - dog/cat photo
-    - laptop/room photo
-    - chair/bed/table photo
-
-    Important:
-    If no obvious object is detected, we continue. This is because close-up
-    bumper/dent photos may not show the full car.
+    This helps with:
+    - person / dog / laptop / room rejection
+    - clean whole-vehicle photos that should not go to repair-cost estimation
     """
 
     model = get_general_object_model()
 
-    # If the general model cannot load, do not block the full system.
-    # Custom validation will still run after this.
     if model is False:
         return {
             "valid": True,
@@ -371,6 +365,7 @@ def validate_general_vehicle_context(image_path: Path):
     vehicle_confidence = 0.0
     non_vehicle_confidence = 0.0
     strongest_non_vehicle = None
+    largest_vehicle_area_ratio = 0.0
 
     for result in results:
         names = result.names
@@ -378,25 +373,40 @@ def validate_general_vehicle_context(image_path: Path):
         if result.boxes is None:
             continue
 
+        image_height, image_width = result.orig_shape[:2]
+        image_area = max(float(image_width * image_height), 1.0)
+
         for box in result.boxes:
             class_id = int(box.cls[0])
             class_name = str(names[class_id]).lower()
             confidence = float(box.conf[0])
 
+            xyxy = box.xyxy[0].tolist()
+            x1, y1, x2, y2 = xyxy
+            box_width = max(float(x2 - x1), 0.0)
+            box_height = max(float(y2 - y1), 0.0)
+            area_ratio = (box_width * box_height) / image_area
+
             detected_objects.append({
                 "class_name": class_name,
                 "confidence": round(confidence, 4),
+                "area_ratio": round(area_ratio, 4),
             })
 
             if class_name in vehicle_classes:
                 vehicle_confidence = max(vehicle_confidence, confidence)
+                largest_vehicle_area_ratio = max(largest_vehicle_area_ratio, area_ratio)
 
             if class_name in obvious_non_vehicle_classes:
                 if confidence > non_vehicle_confidence:
                     non_vehicle_confidence = confidence
                     strongest_non_vehicle = class_name
 
-    # If a clear vehicle is detected, allow custom vehicle-damage validation.
+    whole_vehicle_view = (
+        vehicle_confidence >= 0.35
+        and largest_vehicle_area_ratio >= 0.18
+    )
+
     if vehicle_confidence >= 0.35:
         return {
             "valid": True,
@@ -404,14 +414,14 @@ def validate_general_vehicle_context(image_path: Path):
             "message": "Vehicle context detected.",
             "details": {
                 "vehicle_confidence": round(vehicle_confidence, 4),
+                "vehicle_area_ratio": round(largest_vehicle_area_ratio, 4),
+                "whole_vehicle_view": whole_vehicle_view,
                 "non_vehicle_confidence": round(non_vehicle_confidence, 4),
                 "strongest_non_vehicle": strongest_non_vehicle,
                 "detected_objects": detected_objects[:10],
             }
         }
 
-    # If no vehicle is detected but a person/dog/laptop/etc. is detected,
-    # reject before custom damage models create false positives.
     if vehicle_confidence < 0.35 and non_vehicle_confidence >= 0.45:
         return {
             "valid": False,
@@ -422,6 +432,8 @@ def validate_general_vehicle_context(image_path: Path):
             ),
             "details": {
                 "vehicle_confidence": round(vehicle_confidence, 4),
+                "vehicle_area_ratio": round(largest_vehicle_area_ratio, 4),
+                "whole_vehicle_view": whole_vehicle_view,
                 "non_vehicle_confidence": round(non_vehicle_confidence, 4),
                 "strongest_non_vehicle": strongest_non_vehicle,
                 "detected_objects": detected_objects[:10],
@@ -434,6 +446,8 @@ def validate_general_vehicle_context(image_path: Path):
         "message": "No obvious non-vehicle object detected. Continuing with custom validation.",
         "details": {
             "vehicle_confidence": round(vehicle_confidence, 4),
+            "vehicle_area_ratio": round(largest_vehicle_area_ratio, 4),
+            "whole_vehicle_view": whole_vehicle_view,
             "non_vehicle_confidence": round(non_vehicle_confidence, 4),
             "strongest_non_vehicle": strongest_non_vehicle,
             "detected_objects": detected_objects[:10],
@@ -441,23 +455,35 @@ def validate_general_vehicle_context(image_path: Path):
     }
 
 
-def validate_vehicle_damage_input(raw_results):
+def validate_vehicle_damage_input(raw_results, general_validation=None):
     """
     Checks whether the uploaded image is suitable for vehicle damage analysis.
 
-    This prevents:
-    - random non-vehicle images being classified as damage
-    - clean vehicle images being forced into a repair-cost estimate
-    - weak false-positive detections going to cost estimation
+    Strong rule:
+    - Non-vehicle images are rejected.
+    - Clean whole-vehicle images are rejected.
+    - A vehicle photo is accepted only when damage evidence is reliable.
 
-    Stronger rule:
-    A vehicle image is accepted only when there is reliable damage evidence.
-    A clean vehicle or unclear full-vehicle photo is stopped before cost estimation.
+    This prevents full clean vehicle photos from being forced into
+    glass shatter / dent / scratch predictions.
     """
+
+    general_details = (general_validation or {}).get("details", {})
+    whole_vehicle_view = bool(general_details.get("whole_vehicle_view", False))
+    vehicle_area_ratio = float(general_details.get("vehicle_area_ratio", 0.0) or 0.0)
+    general_vehicle_confidence = float(general_details.get("vehicle_confidence", 0.0) or 0.0)
 
     damage_classifier = raw_results.get("damage_classifier", {})
     damage_class_name = str(damage_classifier.get("class_name", "")).lower()
     damage_class_conf = get_confidence(damage_classifier)
+
+    severity_classifier = raw_results.get("severity_classifier", {})
+    severity_name = str(severity_classifier.get("class_name", "")).lower()
+    severity_conf = get_confidence(severity_classifier)
+
+    archive5_support = raw_results.get("archive5_damage_type_support", {})
+    archive5_name = str(archive5_support.get("class_name", "")).lower()
+    archive5_conf = get_confidence(archive5_support)
 
     best_damage_detection = get_best_prediction(raw_results.get("damage_detector", {}))
     best_damage_segmentation = get_best_prediction(raw_results.get("damage_segmenter", {}))
@@ -474,15 +500,13 @@ def validate_vehicle_damage_input(raw_results):
     best_car_part_name = str(best_car_part.get("class_name", "")).lower() if best_car_part else ""
     best_damaged_part_name = str(best_damaged_part_support.get("class_name", "")).lower() if best_damaged_part_support else ""
 
-    vehicle_signal_confidence = max(car_part_conf, damaged_part_support_conf)
+    vehicle_signal_confidence = max(car_part_conf, damaged_part_support_conf, general_vehicle_confidence)
     damage_signal_confidence = max(damage_detection_conf, damage_segmentation_conf)
 
-    # Vehicle evidence:
-    # carpart_segmenter predicts vehicle parts such as bumper, wheel, glass, hood, etc.
-    # damaged_part_support predicts damaged vehicle part labels.
     vehicle_signal = (
         car_part_conf >= 0.45
         or damaged_part_support_conf >= 0.35
+        or general_vehicle_confidence >= 0.35
     )
 
     classifier_says_whole = (
@@ -497,14 +521,12 @@ def validate_vehicle_damage_input(raw_results):
         or "damaged" in damage_class_name
     ) and not classifier_says_whole
 
-    # Strong evidence from actual damage detector/segmenter.
-    # This is intentionally stricter than before to stop clean vehicles.
-    strong_damage_detector = damage_detection_conf >= 0.70
-    strong_damage_segmenter = damage_segmentation_conf >= 0.70
+    strong_damage_detector = damage_detection_conf >= 0.75
+    strong_damage_segmenter = damage_segmentation_conf >= 0.75
 
-    # Medium evidence is trusted only when more than one model agrees.
-    medium_damage_detector = damage_detection_conf >= 0.55
-    medium_damage_segmenter = damage_segmentation_conf >= 0.55
+    medium_damage_detector = damage_detection_conf >= 0.60
+    medium_damage_segmenter = damage_segmentation_conf >= 0.60
+    medium_archive5_damage = archive5_conf >= 0.75 and archive5_name not in ["", "unknown"]
 
     damage_evidence_count = 0
 
@@ -514,7 +536,10 @@ def validate_vehicle_damage_input(raw_results):
     if medium_damage_segmenter:
         damage_evidence_count += 1
 
-    if classifier_says_damaged and damage_class_conf >= 0.80:
+    if classifier_says_damaged and damage_class_conf >= 0.85:
+        damage_evidence_count += 1
+
+    if medium_archive5_damage:
         damage_evidence_count += 1
 
     reliable_damage_signal = (
@@ -523,14 +548,47 @@ def validate_vehicle_damage_input(raw_results):
         or damage_evidence_count >= 2
     )
 
+    glass_or_windshield_false_positive_risk = (
+        whole_vehicle_view
+        and (
+            "glass" in best_damage_name
+            or "glass" in archive5_name
+            or "windshield" in best_car_part_name
+            or "windshield" in best_damaged_part_name
+            or "front_glass" in best_car_part_name
+        )
+        and damage_detection_conf < 0.90
+        and damage_segmentation_conf < 0.90
+    )
+
+    weak_minor_damage_on_full_vehicle = (
+        whole_vehicle_view
+        and ("minor" in severity_name or severity_conf < 0.70)
+        and damage_detection_conf < 0.90
+        and damage_segmentation_conf < 0.90
+    )
+
     validation_details = {
         "vehicle_signal_confidence": round(vehicle_signal_confidence, 4),
         "damage_signal_confidence": round(damage_signal_confidence, 4),
         "damage_evidence_count": damage_evidence_count,
         "reliable_damage_signal": reliable_damage_signal,
+        "whole_vehicle_view": whole_vehicle_view,
+        "vehicle_area_ratio": round(vehicle_area_ratio, 4),
+        "general_vehicle_confidence": round(general_vehicle_confidence, 4),
+        "glass_or_windshield_false_positive_risk": glass_or_windshield_false_positive_risk,
+        "weak_minor_damage_on_full_vehicle": weak_minor_damage_on_full_vehicle,
         "damage_classifier": {
             "class_name": damage_class_name,
             "confidence": round(damage_class_conf, 4),
+        },
+        "severity_classifier": {
+            "class_name": severity_name,
+            "confidence": round(severity_conf, 4),
+        },
+        "archive5_damage_type_support": {
+            "class_name": archive5_name,
+            "confidence": round(archive5_conf, 4),
         },
         "best_damage_detection": {
             "class_name": best_damage_name,
@@ -550,7 +608,6 @@ def validate_vehicle_damage_input(raw_results):
         }
     }
 
-    # Case 1: Random image, person image, room image, food image, etc.
     if not vehicle_signal and not reliable_damage_signal:
         return {
             "valid": False,
@@ -559,7 +616,6 @@ def validate_vehicle_damage_input(raw_results):
             "details": validation_details,
         }
 
-    # Case 2: Something looks damaged, but the system cannot confirm that it is a vehicle.
     if not vehicle_signal and reliable_damage_signal:
         return {
             "valid": False,
@@ -568,8 +624,6 @@ def validate_vehicle_damage_input(raw_results):
             "details": validation_details,
         }
 
-    # Case 3: Vehicle is visible, but damage is not reliable enough.
-    # This is the important fix for clean vehicle photos.
     if vehicle_signal and not reliable_damage_signal:
         return {
             "valid": False,
@@ -578,7 +632,20 @@ def validate_vehicle_damage_input(raw_results):
             "details": validation_details,
         }
 
-    # Case 4: Classifier strongly says whole/undamaged and detection evidence is not very strong.
+    if (
+        whole_vehicle_view
+        and (
+            glass_or_windshield_false_positive_risk
+            or weak_minor_damage_on_full_vehicle
+        )
+    ):
+        return {
+            "valid": False,
+            "reason_code": "vehicle_no_damage",
+            "message": "A vehicle is visible, but no clear external damage was detected. Please upload a closer photo of the damaged area.",
+            "details": validation_details,
+        }
+
     if (
         classifier_says_whole
         and damage_class_conf >= 0.75
@@ -631,7 +698,6 @@ def build_confirmation_status(fused_result, repair_result):
     if len(possible_parts) > 1:
         confirmation_reasons.append("Multiple affected parts may change the final cost.")
 
-    # Remove duplicate reasons
     unique_reasons = []
     for reason in confirmation_reasons:
         if reason not in unique_reasons:
@@ -677,7 +743,7 @@ def analyze_single_image(image_path: Path, original_filename: str, brand: str, m
 
     raw_results = run_all_models(image_path, models=models)
 
-    input_validation = validate_vehicle_damage_input(raw_results)
+    input_validation = validate_vehicle_damage_input(raw_results, general_validation)
 
     if not input_validation["valid"]:
         return make_json_safe({
